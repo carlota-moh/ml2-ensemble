@@ -1,4 +1,16 @@
 # Machine Learning II
+
 ## Ensemble Project
 
-Repository created for a project about Ensemble Learning in the Machine Learning II course in the Big Data Master's Degree at Comillas ICAI University.
+Project done by: 
+
+|Nombre               | Correo                             |
+|---------------------|------------------------------------|
+|Carlota Monedero     | carlotamoh@alu.comillas.edu        |
+|José Manuel Vega     | josemanuel.vega@alu.comillas.edu   |
+|Jorge Ayuso          | jorgeayusomartinez@alu.comillas.edu|
+|Javier Gisbert       | 202208977@alu.comillas.edu         |
+|Diego Sanz           | d.sanz-gadea@alu.icai.comillas.edu |
+
+
+This repository has been created for a project about Ensemble Learning in the Machine Learning II course in the Big Data Master's Degree at Comillas ICAI University.
