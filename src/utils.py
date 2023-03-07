@@ -399,6 +399,8 @@ def plot_predicted_probabilities_comparison(models, X_train, y_train, X_test, y_
     fig.suptitle('Predicted probabilities for each model and class for test and train set', fontsize=16)
     # Set the spacing between the plots
     plt.tight_layout()
+    # Add some space between the title and the plots
+    plt.subplots_adjust(top=0.96)
     # Show the plot
     plt.show()
     return
