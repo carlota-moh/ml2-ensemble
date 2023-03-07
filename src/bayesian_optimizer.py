@@ -8,39 +8,43 @@ class ModelOptimizer:
 
     Functions based on code from: https://towardsdatascience.com/bayesian-optimization-with-python-85c66df711ec
     """
-    def __init__(self, scoring):
+    def __init__(self, scoring, nfolds=5):
         self.optimizer = None
         self.best_optimizer = None
         self.scoring = scoring
+        self.nfolds = nfolds
 
     def black_box_function(self, X_train_scale, y_train, model, **params):
         """
-        Black box function for optimization algorithm
+        Black box function for optimization algorith
         """
         model = model.set_params(**params)
         f = cross_val_score(model, X_train_scale, y_train,
-                            scoring=self.scoring, cv=10)
+                            scoring=self.scoring, cv=self.nfolds)
         
         return f.mean()
 
     def optimize_model(self, pbounds, X_train_scale, y_train, model, int_params, n_iter=25):
         """
-        Optimize 
-
+        Optimize model using Bayesian Optimization
         """
         def opt_function(**params):
             """
-            Function wrapper
+            Function wrapper for black box function
             """
-            return self.black_box_function(X_train_scale,
-                                           y_train,
-                                           model,
-                                           **params)
+            return self.black_box_function(
+                X_train_scale,
+                y_train,
+                model,
+                **params
+            )
         # create optimizer
-        optimizer = BayesianOptimization(f = None,
-                                         pbounds=pbounds,
-                                         verbose=2,
-                                         random_state=2022)
+        optimizer = BayesianOptimization(
+            f = None,
+                pbounds=pbounds,
+                verbose=2,
+                random_state=2022
+        )
 
         # declare acquisition function used for getting new values of the
         # hyperparams
