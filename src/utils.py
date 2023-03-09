@@ -5,25 +5,196 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 from sklearn.metrics import (
-    mean_squared_error, 
-    r2_score, mean_absolute_error, 
-    silhouette_score, 
-    classification_report, 
-    RocCurveDisplay,
+    confusion_matrix,
     f1_score,
     brier_score_loss,
-    log_loss,
     precision_score,
     recall_score,
-    accuracy_score
+    accuracy_score,
+    balanced_accuracy_score,
+    roc_auc_score,
 )
 from sklearn.calibration import (
     calibration_curve,
     CalibratedClassifierCV
 )
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+
+# Constants
+# Metrics for the summary function
+METRIC_FUNCS_SUMMARY = {
+    'Confusion matrix': confusion_matrix,
+    'Confusion matrix normalized': confusion_matrix,
+    'Accuracy': accuracy_score,
+    'Balanced accuracy': balanced_accuracy_score, 
+    'Precision': precision_score,
+    'Recall': recall_score,
+    'F1-Score': f1_score,
+    'ROC-AUC': roc_auc_score
+}
+
+# Metrics for the model comparison function
+METRIC_FUNCS_COMPARISON = {
+    'Accuracy':accuracy_score,
+    'Balanced accuracy': balanced_accuracy_score, 
+    'Brier Loss':brier_score_loss, 
+    'Precision':precision_score, 
+    'Recall':recall_score, 
+    'F1-Score': f1_score, 
+    'ROC-AUC': roc_auc_score
+}
+
+
+def preprocess_data(df, target):
+    """
+    Preprocess the data by applying the following steps:
+    1. Drop the target column
+    2. Split the data into numeric and categorical columns
+    3. Define the preprocessing pipelines for each column type
+    4. Apply the pipelines to the data
+    5. Combine the preprocessed numeric and categorical data
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The DataFrame to preprocess
+    target : str
+        The name of the target column
+    
+    Returns
+    -------
+    preprocessed_df : pd.DataFrame
+        The preprocessed data
+    y : pd.Series
+        The target column
+    """
+    # Divide the data into X and y
+    X, y = df.drop(target, axis=1), df[target]
+    # Obtain the numeric and categorical columns in the data
+    numeric_columns = X.select_dtypes(include=np.number).columns.to_list()
+    categorical_columns = X.select_dtypes(include='category').columns.to_list()
+    
+    # Define the individual Pipelines
+    std_scaler = StandardScaler()
+    one_hot = OneHotEncoder(handle_unknown='ignore', drop='first')
+    # Define the numeric and categorical preprocessing pipeline
+    numeric_pipeline = Pipeline([('std_scaler', std_scaler)])
+    categorical_pipeline = Pipeline([('one_hot', one_hot)])
+    # Define the full preprocessing pipeline
+    preprocessor = ColumnTransformer([
+        ('numeric', numeric_pipeline, numeric_columns),
+        ('categorical', categorical_pipeline, categorical_columns)
+    ])
+
+    # Apply the Pipeline to the data
+    preprocessed_data = preprocessor.fit_transform(X)
+    # Get the feature names after one-hot encoding
+    feature_names = preprocessor.named_transformers_['categorical'].\
+        named_steps['one_hot'].get_feature_names(categorical_columns).tolist()
+    feature_names += numeric_columns
+
+    # Create a DataFrame with the preprocessed data
+    preprocessed_df = pd.DataFrame(preprocessed_data, columns=feature_names)
+    
+    # Return the preprocessed data and the target
+    return preprocessed_df, y
+
+
+def get_metrics_summary_model(model, model_name, data_dict, threshold=0.5):
+    """
+    Prints a summary of the metrics of a model for a given threshold
+    and returns them in a DataFrame
+
+    Parameters
+    ------------
+    model : sklearn model
+        The model to evaluate
+    data_dict : dict of pd.DataFrame
+        A dictionary containing the dataframes for train, test and validation sets (if any)
+    threshold : float, optional
+        The threshold to use to convert the probabilities to binary values, by default 0.5
+    labels_sets : list, optional
+        The labels to use for the train and test sets, by default ['TRAIN', 'TEST']
+
+    Returns
+    -----------
+    pd.DataFrame
+        A DataFrame with the metrics (accuracy, balanced accuracy, precision, recall, f1-score, roc-auc)
+
+    Limitations
+    -----------
+    The data_dict dictionary should have the following structure, with the keys being the set names
+    and the values being dictionaries with the keys 'data' and 'target' containing the data and target.
+
+    data_dict = {
+        'train': {
+            'data': X_train,
+            'target': y_train
+        },
+        'test': {
+            'data': X_test,
+            'target': y_test
+        },
+        'validation': {
+            'data': X_val,
+            'target': y_val
+        }
+    }
+
+    """
+
+    # Get the predicted probabilities and predictions
+    predictions_dict = {}
+    for dataset_type in data_dict.keys():
+        # Get the predicted probabilities
+        predictions_proba = model.predict_proba(data_dict[dataset_type]['data'])[:, 1]
+        # Get the predictions and store them in a dictionary
+        predictions = np.array([1 if i > threshold else 0 for i in predictions_proba])
+        predictions_dict[dataset_type] = predictions
+
+    # Calculate and print the metrics for each set
+    metrics_dict = {
+        'Model': model_name,
+        'Threshold': threshold
+    }
+    # Iterate over the metrics
+    for metric in METRIC_FUNCS_SUMMARY.keys():
+        # Print a separator
+        print('='*10)
+        # Iterate over the sets
+        for dataset_type, predictions in predictions_dict.items():
+            # Calculate the metric for the set
+            if metric == 'Confusion matrix':
+                # Calculate the confusion matrix 
+                metric_score = confusion_matrix(
+                    data_dict[dataset_type]['target'], predictions
+                )
+                print(f'{metric} {dataset_type}: \n{metric_score}')
+            elif metric == 'Confusion matrix normalized':
+                # Calculate the normalized confusion matrix and round the values
+                metric_score = confusion_matrix(
+                    data_dict[dataset_type]['target'], predictions, normalize='true'
+                )
+                # Round it to 5 decimals
+                metric_score = np.round(metric_score, 5)
+                print(f'{metric} {dataset_type}: \n{metric_score}')
+            else:
+                # Calculate the other metrics
+                metric_score = METRIC_FUNCS_SUMMARY[metric](
+                    data_dict[dataset_type]['target'], predictions
+                )
+                print(f'{metric} {dataset_type}: {metric_score}')
+                # Store the metric in the dictionary
+                metrics_dict[f'{metric} {dataset_type}'] = metric_score
+
+    # Return the metrics as a DataFrame
+    return pd.DataFrame(metrics_dict, index=[0])
 
 
 def fit_pca(df, n_components=2, preprocessor=None):
@@ -217,22 +388,22 @@ def get_classification_metrics(models: dict, X_test, y_test, metrics, X_train=No
         for metric_name in metrics:
             if pca_flag:
                 # Calculate the metrics for the test data
-                score = get_score(metric_name, y_test, y_pred_pca)
+                score = get_score(metric_name, y_test, y_pred_pca, METRIC_FUNCS_COMPARISON)
                 # Append the score to the scores dictionary
                 scores[f"{metric_name.capitalize().replace('_', ' ')}"].append(score)
                 if train_flag:
                     # Calculate the metrics for the train data
-                    score_train = get_score(metric_name, y_train, y_pred_train_pca)
+                    score_train = get_score(metric_name, y_train, y_pred_train_pca, METRIC_FUNCS_COMPARISON)
                     # Append the score to the scores dictionary
                     scores[f"{metric_name.capitalize().replace('_', ' ')} (Train)"].append(score_train)
             else:    
                 # Calculate the metrics for the test data
-                score = get_score(metric_name, y_test, y_pred)
+                score = get_score(metric_name, y_test, y_pred, METRIC_FUNCS_COMPARISON)
                 # Append the score to the scores dictionary
                 scores[f"{metric_name.capitalize().replace('_', ' ')}"].append(score)
                 if train_flag:
                     # Calculate the metrics for the train data
-                    score_train = get_score(metric_name, y_train, y_pred_train)
+                    score_train = get_score(metric_name, y_train, y_pred_train, METRIC_FUNCS_COMPARISON)
                     # Append the score to the scores dictionary
                     scores[f"{metric_name.capitalize().replace('_', ' ')} (Train)"].append(score_train)
 
@@ -244,7 +415,7 @@ def get_classification_metrics(models: dict, X_test, y_test, metrics, X_train=No
     return metric_table
 
 
-def get_score(metric_name, y_true, y_pred):
+def get_score(metric_name, y_true, y_pred, metric_funcs):
     """
     A nested function to calculate different scores based on the metric name
 
@@ -262,13 +433,6 @@ def get_score(metric_name, y_true, y_pred):
     score : float
         The score for the given metric
     """
-    metric_funcs = {
-        'brier_loss':brier_score_loss, 
-        'precision':precision_score, 
-        'recall':recall_score, 
-        'f1_score':f1_score, 
-        'accuracy':accuracy_score
-    }
     metric_func = metric_funcs.get(metric_name, precision_score)
     score = metric_func(y_true, y_pred)
     return score
