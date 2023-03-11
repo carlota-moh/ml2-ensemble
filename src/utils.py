@@ -4,6 +4,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+
 from sklearn.metrics import (
     confusion_matrix,
     f1_score,
@@ -14,16 +15,19 @@ from sklearn.metrics import (
     balanced_accuracy_score,
     roc_auc_score,
 )
+
 from sklearn.calibration import (
     calibration_curve,
     CalibratedClassifierCV
 )
+
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
 from imblearn.over_sampling import (
     SMOTE, 
     SMOTENC
@@ -52,8 +56,6 @@ METRIC_FUNCS_COMPARISON = {
     'F1-Score': f1_score, 
     'ROC-AUC': roc_auc_score
 }
-
-
 
 
 def column_encoder(X_change, X_ref, custom_encoding=None):
@@ -716,5 +718,111 @@ def plot_column_errors(model_errors, model_name, col_name, axis_title, title):
     fig.suptitle(f"{title} '{model_name}'")
 
     # Show the figure
+    plt.show()
+    return
+
+def get_top_n_days(errors_dict, model, col_name, n=3, set = 'Validation'):
+    """
+    Get the top n days with the most errors for the specified model and dataset.
+
+    Parameters
+    ----------
+    errors_dict : dict
+        Dictionary containing dataframes with the model errors for each dataset.
+    model : str
+        Name of the model to plot.
+    col_name : str
+        Name of the column to study.
+    n : int, optional
+        Number of days to return, by default 3
+    set : str, optional
+        Dataset to use, by default 'Validation'
+    """
+    dataset_errors = errors_dict[model][set]
+    # Get the columns for the category of interest
+    categoy_cols = [col for col in dataset_errors.columns if col.startswith(col_name)]
+    # Sum the occurrences of each weekday across all rows
+    category_counts = dataset_errors[categoy_cols].sum()
+    # Convert the series to a dataframe
+    category_counts = pd.DataFrame(category_counts, columns=['Error_count'])
+    # Format category counts
+    category_counts = (
+        category_counts
+        # Reset the index to make the category a column
+        .reset_index()
+        # Rename the index to Category
+        .rename(columns={'index': 'Category'})
+        # Sort the dataframe by the error count and return the top n
+        .sort_values(by='Error_count', ascending=False)
+        .head(n)
+    )
+    # Sort the dataframe by the error count and return the top n
+    return category_counts
+
+# Define a function that obtains the misclassified days of the top 3 days with the most errors
+def get_misclassified_days_top_n(errors_dict, model, col_name, n=3, set = 'Validation'):
+    """
+    Get the misclassified days of the top n days with the most errors for the specified model and dataset.
+
+    Parameters
+    ----------
+    errors_dict : dict
+        Dictionary containing dataframes with the model errors for each dataset.
+    model : str
+        Name of the model to plot.
+    col_name : str
+        Name of the column to study.
+    n : int, optional
+        Number of days to return, by default 3
+    set : str, optional
+        Dataset to use, by default 'Validation'
+    """
+    # Get the top n days with the most errors
+    top_n_days = get_top_n_days(errors_dict, model, col_name, n, set)
+    # Get the misclassified days for the model
+    misclassified_days = errors_dict[model][set]
+    # Get the misclassified days for the top n days whose error count is greater than 0
+    days = top_n_days['Category'][top_n_days['Error_count'] > 0].tolist()
+    misclassified_days_top_n = misclassified_days[misclassified_days[days].sum(axis=1) > 0]
+    # Return the misclassified days for the top n days
+    return days, misclassified_days_top_n
+
+def compare_missclasified_days_top_n(X_train, errors_dict, model, col_name, n=3, set = 'Validation'):
+    """
+    Compare the misclassified days of the top n days with the average hours for the specified model and dataset.
+    """
+    # CR00 to CR23 are values for the 24 hours of the day
+    hours = [f'CR{i:02d}' for i in range(24)]
+    # Get the misclassified days for the top n days
+    days, misclassified_days_top_n = get_misclassified_days_top_n(errors_dict, model, col_name, n, set)
+    
+    # Create a figure with as many vertical plots as there are days
+    fig, axes = plt.subplots(nrows=len(days), ncols=1, figsize=(12, 6 * len(days)))
+    for day, ax in zip(days, axes):
+        # Get the mean value for each hour for the day
+        hours_avg_day = X_train.loc[X_train[day] == 1, hours].mean()
+        # Get the mean value for each hour for the misclassified days
+        hours_error_day = misclassified_days_top_n.loc[misclassified_days_top_n[day] == 1, hours].mean()
+        # Plot the mean values for each hour as a time series
+        hours_avg_day.plot(ax = ax, label=f'Average for {day}', color='blue')
+        hours_error_day.plot(ax = ax, label='Misclassified', color='red')
+        # Put a horizontal line at 0 to make it easier to see the values
+        ax.axhline(0, color='black', linestyle='--')
+        # Make the y-axis go from the biggest out of the minimum or maximum value in absolute value
+        max_y = max(hours_avg_day.abs().max(), hours_avg_day.abs().min(), hours_error_day.abs().max(), hours_error_day.abs().min())
+        plt.ylim(-max_y, max_y)
+        # Despine the plot
+        sns.despine()
+        # Change the x-axis ticks to be the hour of the day
+        plt.xticks(range(24), range(24))
+        # Add a legend outside the plot for this axis
+        ax.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+        # Add a label to the y-axis
+        ax.set_ylabel('Average value')
+        # Add a label to the x-axis
+        ax.set_xlabel('Hour of the day')
+
+    # Add a title to the figure
+    fig.suptitle(f'Average values for the hours of the day for {model} for the top {n} days with the most errors')
     plt.show()
     return
