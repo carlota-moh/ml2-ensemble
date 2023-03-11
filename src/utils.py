@@ -24,7 +24,10 @@ from sklearn.compose import ColumnTransformer
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
+from imblearn.over_sampling import (
+    SMOTE, 
+    SMOTENC
+)
 
 # Constants
 # Metrics for the summary function
@@ -49,6 +52,101 @@ METRIC_FUNCS_COMPARISON = {
     'F1-Score': f1_score, 
     'ROC-AUC': roc_auc_score
 }
+
+
+
+
+def column_encoder(X_change, X_ref, custom_encoding=None):
+    """
+    Function used for applying specific column 
+    encoding following the guidelines of another
+    DataFrame.
+
+    Parameters
+    ----------
+    X_change: pd.DataFrame
+        DataFrame to encode
+    X_ref: pd.DataFrame
+        DataFrame taken as reference
+    custom_encoding: dict, optional
+        A dictionary containing custom encoding rules for specific columns. 
+        Keys should be column names and values should be the data type to encode to.
+
+    Returns
+    -------
+    encoded_df: pd.DataFrame
+        A new DataFrame with the same columns as X_change but with the data types matched 
+        to the encoding rules in X_ref or custom_encoding.
+    """
+
+    # Validate inputs
+    if not isinstance(X_change, pd.DataFrame):
+        raise TypeError("X_change must be a Pandas DataFrame.")
+    if not isinstance(X_ref, pd.DataFrame):
+        raise TypeError("X_ref must be a Pandas DataFrame.")
+    if custom_encoding is not None and not isinstance(custom_encoding, dict):
+        raise TypeError("custom_encoding must be a dictionary.")
+    
+    # Check for missing columns
+    missing_cols = set(X_change.columns) - set(X_ref.columns)
+    if missing_cols:
+        raise ValueError(f"The following columns are missing from X_ref: {missing_cols}")
+    
+    # Apply custom encoding rules
+    encoding = {}
+    if custom_encoding is not None:
+        encoding.update(custom_encoding)
+    
+    # Apply reference encoding rules
+    for col in X_ref.columns:
+        dtype = X_ref[col].dtype
+        encoding[col] = dtype
+    
+    # Encode columns in X_change
+    encoded_df = X_change.astype(encoding)
+    
+    return encoded_df
+
+
+def fix_class_imbalance(X_train, y_train):
+    """
+    Fix imbalanced classes prior to training. Applies SMOTE or SMOTENC depending on the
+    presence of categorical variables in the data.
+
+    Parameters
+    ----------
+    X_train: pd.DataFrame
+        The training data
+    y_train: pd.Series
+        The target column
+    
+    Returns
+    -------
+    X_balanced: pd.DataFrame
+        The training data with balanced classes
+    y_balanced: pd.Series
+        The target column with balanced classes
+    """
+
+    # Fix class imbalance using SMOTE or SMOTENC
+    cat_cols = X_train.select_dtypes(include=['category']).columns.tolist()
+    cat_ids = [X_train.columns.get_loc(col) for col in cat_cols]
+    # Use SMOTENC if categorical columns are present
+    if len(cat_cols) >= 1:
+        imbalance_fixer = SMOTENC(random_state=2022, categorical_features=cat_ids)
+        X_balanced, y_balanced = imbalance_fixer.fit_resample(X_train.values, y_train.values)
+
+    # if no cat variables are present, use regular SMOTE
+    else:
+        imbalance_fixer = SMOTE(random_state=2022)
+        X_balanced, y_balanced = imbalance_fixer.fit_resample(X_train.values, y_train.values)
+
+    # Fix format
+    X_balanced = pd.DataFrame(X_balanced, columns=X_train.columns)
+    column_encoder(X_balanced, X_train)
+    # Convert y_balanced to a Series
+    y_balanced = pd.Series(y_balanced, name=y_train.name)
+    return X_balanced, y_balanced
 
 
 def preprocess_data(df, target):
@@ -94,10 +192,10 @@ def preprocess_data(df, target):
 
     # Apply the Pipeline to the data
     preprocessed_data = preprocessor.fit_transform(X)
-    # Get the feature names after one-hot encoding
-    feature_names = preprocessor.named_transformers_['categorical'].\
+    # Get the feature names
+    feature_names = numeric_columns
+    feature_names += preprocessor.named_transformers_['categorical'].\
         named_steps['one_hot'].get_feature_names(categorical_columns).tolist()
-    feature_names += numeric_columns
 
     # Create a DataFrame with the preprocessed data
     preprocessed_df = pd.DataFrame(preprocessed_data, columns=feature_names)
@@ -215,6 +313,7 @@ def fit_pca(df, n_components=2, preprocessor=None):
     df_pca : np.array
         Array with the PCA transformed data
     """
+    
     if preprocessor is not None:
         df = preprocessor.fit_transform(df)
         n_components = df.shape[1]
@@ -237,6 +336,7 @@ def get_explained_variance(pca, plot=True):
     exp_var : float
         Explained variance
     """
+
     # Get the explained variance of the PCA as a DataFrame
     exp_variance = pd.DataFrame(
         data=pca.explained_variance_ratio_, 
