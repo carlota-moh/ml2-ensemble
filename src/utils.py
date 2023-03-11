@@ -148,87 +148,95 @@ def fix_class_imbalance(X_train, y_train):
     y_balanced = pd.Series(y_balanced, name=y_train.name)
     return X_balanced, y_balanced
 
-
-def preprocess_data(df, target):
+def preprocess_data(X, preprocessor=None):
     """
     Preprocess the data by applying the following steps:
-    1. Drop the target column
-    2. Split the data into numeric and categorical columns
-    3. Define the preprocessing pipelines for each column type
-    4. Apply the pipelines to the data
-    5. Combine the preprocessed numeric and categorical data
+    1. If there is no preprocessor, fit one
+    2. Apply the preprocessor to the data
+    3. If the data is a numpy array, convert it to a DataFrame
+    4. Return the preprocessed data and the preprocessor
     
     Parameters
     ----------
-    df : pd.DataFrame
+    X : pd.DataFrame
         The DataFrame to preprocess
-    target : str
-        The name of the target column
     
     Returns
     -------
-    preprocessed_df : pd.DataFrame
+    X_prep : pd.DataFrame
         The preprocessed data
-    y : pd.Series
-        The target column
     """
-    # Divide the data into X and y
-    X, y = df.drop(target, axis=1), df[target]
+    # If there is no preprocessor, fit one
+    if preprocessor is None:
+        preprocessor = fit_encoder(X)
+
+    # Apply the preprocessor to the data
+    X_prep = preprocessor.transform(X)
+
+    # If the data is a numpy array, convert it to a DataFrame
+    if isinstance(X_prep, np.ndarray):
+        # Get the numeric and categorical columns
+        feature_names = X.select_dtypes(include=np.number).columns.to_list()
+        categorical_columns = X.select_dtypes(include='category').columns.to_list()
+        # Then get the categorical columns
+        try:
+            feature_names += preprocessor.named_transformers_['categorical'].\
+                named_steps['one_hot'].get_feature_names(categorical_columns).tolist()
+        except AttributeError as e:
+            feature_names += preprocessor.named_transformers_['categorical'].\
+                named_steps['one_hot'].get_feature_names_out(categorical_columns).tolist()
+        
+        # Create a DataFrame with the preprocessed data
+        X_prep = pd.DataFrame(X_prep, columns=feature_names)
+        
+    return X_prep, preprocessor
+
+
+def fit_encoder(X):
+    """
+    Fit encoder used for encoding categorical and scaling numerical variables
+
+    Parameters
+    ----------
+    X : pd.DataFrame
+        The DataFrame to preprocess
+    
+    Returns
+    -------
+    preprocessor : sklearn.preprocessing.ColumnTransformer
+        The fitted encoder
+    """
     # Obtain the numeric and categorical columns in the data
     numeric_columns = X.select_dtypes(include=np.number).columns.to_list()
     categorical_columns = X.select_dtypes(include='category').columns.to_list()
     
     # Define the individual Pipelines
-    std_scaler = StandardScaler()
-    one_hot = OneHotEncoder(handle_unknown='ignore', drop='first')
-    # Define the numeric and categorical preprocessing pipeline
-    numeric_pipeline = Pipeline([('std_scaler', std_scaler)])
-    categorical_pipeline = Pipeline([('one_hot', one_hot)])
-    # Define the full preprocessing pipeline
-    preprocessor = ColumnTransformer([
-        ('numeric', numeric_pipeline, numeric_columns),
-        ('categorical', categorical_pipeline, categorical_columns)
-    ])
-
-    # Apply the Pipeline to the data
-    preprocessed_data = preprocessor.fit_transform(X)
-    # Get the feature names
-    feature_names = numeric_columns
-    try:
-        feature_names += preprocessor.named_transformers_['categorical'].\
-            named_steps['one_hot'].get_feature_names(categorical_columns).tolist()
-    except AttributeError as e:
-        feature_names += preprocessor.named_transformers_['categorical'].\
-            named_steps['one_hot'].get_feature_names_out(categorical_columns).tolist()
-
-    # Create a DataFrame with the preprocessed data
-    preprocessed_df = pd.DataFrame(preprocessed_data, columns=feature_names)
-    
-    # Return the preprocessed data and the target
-    return preprocessed_df, y
-
-def fit_encoder(X_train):
-    """
-    Fit encoder used for encoding categorical and scaling numerical variables
-    """
-    ## Inputs of the model. Change accordingly to perform variable selection
-    inputs_num = X_train.select_dtypes(include=['int64','float64']).columns.tolist()
-    inputs_cat = X_train.select_dtypes(include=['category']).columns.tolist()
-    inputs = inputs_num + inputs_cat
     numeric_transformer = StandardScaler()
-    categorical_transformer = OneHotEncoder(sparse_output=False,
-                                            drop='if_binary',
-                                            handle_unknown='ignore') 
-    preprocessor = ColumnTransformer(transformers=[
-            ('num', numeric_transformer, inputs_num),
-            ('cat', categorical_transformer, inputs_cat)],
-            verbose_feature_names_out=False
-            ).set_output(transform="pandas")
+    categorical_transformer = OneHotEncoder(
+        drop='if_binary',
+        handle_unknown='ignore'
+    )
+    numeric_pipeline = Pipeline([('std_scaler', numeric_transformer)])
+    categorical_pipeline = Pipeline([('one_hot', categorical_transformer)])
 
-    preprocessor.fit(X_train)
-
-    return preprocessor
-
+    # Define the full preprocessing pipeline 
+    try: 
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('numeric', numeric_pipeline, numeric_columns),
+                ('categorical', categorical_pipeline, categorical_columns)
+            ],
+        ).set_output(transform="pandas")
+    except:
+        preprocessor = ColumnTransformer(
+            transformers=[
+                ('numeric', numeric_pipeline, numeric_columns),
+                ('categorical', categorical_pipeline, categorical_columns)
+            ],
+        )
+    
+    # Fit the preprocessor and return it
+    return preprocessor.fit(X)
 
 
 def get_metrics_summary_model(model, model_name, data_dict, threshold=0.5):
@@ -638,16 +646,12 @@ def plot_column_errors(model_errors, model_name, col_name, axis_title, title):
 
     # Loop over each dataset in the input dictionary
     for i, (dataset_name, dataset_errors) in enumerate(model_errors[model_name].items()):
-        # Get the columns for the weekdays
-        weekday_cols = [col for col in dataset_errors.columns if col.startswith(col_name)]
-        # Add a column WEEKDAY_1 to the dataset_errors dataframe, with 1 if every other weekday column is 0
-        dataset_errors[f'{col_name}_1'] = dataset_errors[weekday_cols].sum(axis=1) == 0
-        # Add DIASEM_1 to the beginning of the list
-        weekday_cols = [f'{col_name}_1'] + weekday_cols
+        # Get the columns for the category of interest
+        categoy_cols = [col for col in dataset_errors.columns if col.startswith(col_name)]
         # Sum the occurrences of each weekday across all rows
-        weekday_counts = dataset_errors[weekday_cols].sum()
+        category_counts = dataset_errors[categoy_cols].sum()
         # Plot the barplot for the current dataset in the corresponding subplot
-        ax = sns.barplot(x=weekday_counts.index, y=weekday_counts.values, ax=axes[i])
+        ax = sns.barplot(x=category_counts.index, y=category_counts.values, ax=axes[i])
         ax.set_title(f"{dataset_name} ({len(dataset_errors)} errors)")
         ax.set_xlabel(axis_title)
         ax.set_ylabel('Occurrences')
