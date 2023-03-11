@@ -194,14 +194,41 @@ def preprocess_data(df, target):
     preprocessed_data = preprocessor.fit_transform(X)
     # Get the feature names
     feature_names = numeric_columns
-    feature_names += preprocessor.named_transformers_['categorical'].\
-        named_steps['one_hot'].get_feature_names(categorical_columns).tolist()
+    try:
+        feature_names += preprocessor.named_transformers_['categorical'].\
+            named_steps['one_hot'].get_feature_names(categorical_columns).tolist()
+    except AttributeError as e:
+        feature_names += preprocessor.named_transformers_['categorical'].\
+            named_steps['one_hot'].get_feature_names_out(categorical_columns).tolist()
 
     # Create a DataFrame with the preprocessed data
     preprocessed_df = pd.DataFrame(preprocessed_data, columns=feature_names)
     
     # Return the preprocessed data and the target
     return preprocessed_df, y
+
+def fit_encoder(X_train):
+    """
+    Fit encoder used for encoding categorical and scaling numerical variables
+    """
+    ## Inputs of the model. Change accordingly to perform variable selection
+    inputs_num = X_train.select_dtypes(include=['int64','float64']).columns.tolist()
+    inputs_cat = X_train.select_dtypes(include=['category']).columns.tolist()
+    inputs = inputs_num + inputs_cat
+    numeric_transformer = StandardScaler()
+    categorical_transformer = OneHotEncoder(sparse_output=False,
+                                            drop='if_binary',
+                                            handle_unknown='ignore') 
+    preprocessor = ColumnTransformer(transformers=[
+            ('num', numeric_transformer, inputs_num),
+            ('cat', categorical_transformer, inputs_cat)],
+            verbose_feature_names_out=False
+            ).set_output(transform="pandas")
+
+    preprocessor.fit(X_train)
+
+    return preprocessor
+
 
 
 def get_metrics_summary_model(model, model_name, data_dict, threshold=0.5):
