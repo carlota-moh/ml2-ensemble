@@ -621,6 +621,58 @@ def plot_predicted_probabilities_comparison(models, X_train, y_train, X_test, y_
     return
 
 
+def get_misclassified_days(model, X, y):
+    """
+    Returns the misclassified days by the given model.
+
+    Parameters
+    ----------
+    model : sklearn model
+        Model to use to predict the data.
+    X : array-like
+        Data to predict.
+    y : array-like
+        Target to compare the predictions.
+    
+    Returns
+    -------
+    misclassified_days: array-like
+        Array with the misclassified days.
+    """
+    # Reset X and y indexes
+    X, y = X.reset_index(drop=True), y.reset_index(drop=True)
+    # Get the predictions of the model
+    y_pred = model.predict(X)
+    # Get the misclassified days using a mask
+    misclassified_mask = y_pred != y
+    # Get the misclassified days data
+    misclassified_days_data = X.loc[y[misclassified_mask].index]
+    # Return the misclassified days data
+    return misclassified_days_data
+
+
+def get_misclassified_days_dict(model, data_dict):
+    """
+    Returns the misclassified days by the given model for each dataset in the data_dict.
+
+    Parameters
+    ----------
+    model : sklearn model
+        Model to use to predict the data.
+    data_dict : dict
+        Dictionary with the data to predict and the target to compare the predictions.
+    
+    Returns
+    -------
+    misclassified_days_dict: dict
+        Dictionary with the misclassified days for each dataset in the data_dict.
+    """
+    misclassified_days_dict = {}
+    for dataset_name, dataset in data_dict.items():
+        misclassified_days_dict[dataset_name] = get_misclassified_days(model, dataset['data'], dataset['target'])
+    return misclassified_days_dict
+
+
 def plot_column_errors(model_errors, model_name, col_name, axis_title, title):
     """
     Plots barplots for each dataset in the model_errors dictionary showing the occurrences of each day of the week.
