@@ -668,3 +668,54 @@ def plot_predicted_probabilities_comparison(models, X_train, y_train, X_test, y_
     # Show the plot
     plt.show()
     return
+
+
+def plot_column_errors(model_errors, model_name, col_name, axis_title, title):
+    """
+    Plots barplots for each dataset in the model_errors dictionary showing the occurrences of each day of the week.
+
+    Parameters
+    ----------
+    model_errors : dict
+        Dictionary containing dataframes with the model errors for each dataset.
+    model_name : str
+        Name of the model to plot.
+    col_name : str
+        Name of the column to study.
+    axis_title : str
+        Title of the x-axis.
+    title : str
+        Title of the plot.
+    """
+    # Get the number of subplots needed based on the number of datasets in the input dictionary
+    n_subplots = len(model_errors[model_name])
+
+    # Create a figure with subplots
+    fig, axes = plt.subplots(nrows=1, ncols=n_subplots, figsize=(5*n_subplots, 5))
+
+    # Loop over each dataset in the input dictionary
+    for i, (dataset_name, dataset_errors) in enumerate(model_errors[model_name].items()):
+        # Get the columns for the weekdays
+        weekday_cols = [col for col in dataset_errors.columns if col.startswith(col_name)]
+        # Add a column WEEKDAY_1 to the dataset_errors dataframe, with 1 if every other weekday column is 0
+        dataset_errors[f'{col_name}_1'] = dataset_errors[weekday_cols].sum(axis=1) == 0
+        # Add DIASEM_1 to the beginning of the list
+        weekday_cols = [f'{col_name}_1'] + weekday_cols
+        # Sum the occurrences of each weekday across all rows
+        weekday_counts = dataset_errors[weekday_cols].sum()
+        # Plot the barplot for the current dataset in the corresponding subplot
+        ax = sns.barplot(x=weekday_counts.index, y=weekday_counts.values, ax=axes[i])
+        ax.set_title(f"{dataset_name} ({len(dataset_errors)} errors)")
+        ax.set_xlabel(axis_title)
+        ax.set_ylabel('Occurrences')
+        # Rotate the xticks to make them more readable
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+        # Despine the plot
+        sns.despine()
+        
+    # Set the title of the figure
+    fig.suptitle(f"{title} '{model_name}'")
+
+    # Show the figure
+    plt.show()
+    return
