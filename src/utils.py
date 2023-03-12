@@ -221,21 +221,13 @@ def fit_encoder(X):
     numeric_pipeline = Pipeline([('std_scaler', numeric_transformer)])
     categorical_pipeline = Pipeline([('one_hot', categorical_transformer)])
 
-    # Define the full preprocessing pipeline 
-    try: 
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('numeric', numeric_pipeline, numeric_columns),
-                ('categorical', categorical_pipeline, categorical_columns)
-            ],
-        ).set_output(transform="pandas")
-    except:
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ('numeric', numeric_pipeline, numeric_columns),
-                ('categorical', categorical_pipeline, categorical_columns)
-            ],
-        )
+    # Define the full preprocessing pipeline    
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('numeric', numeric_pipeline, numeric_columns),
+            ('categorical', categorical_pipeline, categorical_columns)
+        ],
+    )
     
     # Fit the preprocessor and return it
     return preprocessor.fit(X)
